@@ -162,6 +162,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .akeys{margin:0;color:var(--muted);font-size:12px;text-align:center}
 @media (max-width:640px){.akeys{display:none}}
 #astudy{scroll-margin-top:190px}
+.msay{border:2px solid var(--line);background:var(--paper);border-radius:999px;min-width:34px;height:34px;font-size:15px;margin-left:4px;padding:0 6px;vertical-align:middle;flex:none}
+.msay.on{background:var(--ok);border-color:var(--ok);animation:mpulse 1s infinite}
+.msay.off{opacity:.45}
+@keyframes mpulse{50%{transform:scale(1.12)}}
+#pronbox{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translate(-50%,160%);width:min(520px,calc(100% - 32px));background:var(--paper);border:3px solid var(--sea);border-radius:18px;padding:12px 14px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.2);display:grid;gap:6px;transition:transform .25s}
+#pronbox.show{transform:translate(-50%,0)}#pronbox.ok{border-color:var(--ok)}#pronbox.bad{border-color:var(--bad)}
+#pronbox b{font-size:18px}#pronbox .pw{font-weight:800;font-size:18px;line-height:1.5}#pronbox small{color:var(--muted)}
+#pronbox .px{position:absolute;right:8px;top:6px;border:none;background:none;font-size:18px;color:var(--muted)}
 .trk select{font:inherit;font-size:13px;font-weight:700;border:2px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:4px}
 .hwrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--paper);border:2px solid var(--line);border-radius:16px;padding:10px 12px;box-shadow:0 4px 0 var(--line)}
 .hwrow:active{transform:translateY(2px)}
@@ -1985,8 +1993,7 @@ function buildLesson(node){
     const seq=node.n===1?["gap","gap","build","gap","listen","build","gap","build"]:["gap","build","type","listen","type","build","type","listen"];
     ks.forEach((k,i)=>ex.push(mk(seq[i],k)));
     reviewPick(2,node.u).forEach((k,i)=>ex.splice(3+i*3,0,mk(i?"type":"build",k)));
-    if(speakAvailable()) ex.splice(node.n===1?6:4,0,{t:"speak",k:pick(ks)},...(node.n===2?[]:[]));
-    if(speakAvailable() && node.n===2) ex.push({t:"speak",k:pick(ks)});
+    if(speakAvailable()){ ex.splice(node.n===1?6:4,0,{t:"speak",k:ks[0]}); ex.push({t:"speak",k:ks[1]}); }
   } else if(node.t==="trophy"){
     const ks=shuffle(unitKeys(node.u));
     const seq=["type","listen","type","build","type","listen","gap","type","build","listen"];
@@ -1997,7 +2004,9 @@ function buildLesson(node){
     const th=THEMES.find(t=>t.id===node.th), ks=shuffle(themeKeysAllowed(th)).slice(0,9);
     const seq=["gap","build","listen","gap","type","build","listen","type","gap"];
     ks.forEach((k,i)=>ex.push(mk(seq[i],k)));
-    if(speakAvailable()) ex.splice(5,0,{t:"speak",k:ks[0]});
+    if(speakAvailable()){ ex.splice(5,0,{t:"speak",k:ks[0]}); ex.push({t:"speak",k:ks[1]}); }
+  } else if(node.t==="speakdrill"&&node.keys){
+    shuffle(node.keys.filter(k=>IT[k])).slice(0,6).forEach(k=>ex.push({t:"speak",k}));
   } else if(node.t==="speakdrill"){
     const seen=Object.keys(P.items).filter(k=>IT[k]&&IT[k].en.split(" ").length<=9);
     let ks=shuffle(seen).slice(0,6);
@@ -2005,7 +2014,8 @@ function buildLesson(node){
     ks.forEach(k=>ex.push({t:"speak",k}));
   } else if(node.t==="practice"){
     const ks=reviewPick(4,null);
-    ks.forEach(k=>ex.push(mk(pick(speakAvailable()?["gap","build","type","listen","speak"]:["gap","build","type","listen"]),k)));
+    ks.forEach(k=>ex.push(mk(pick(["gap","build","type","listen"]),k)));
+    if(speakAvailable()) ks.slice(0,2).forEach(k=>ex.push({t:"speak",k}));
   } else if(node.t==="jump"){
     const pool=shuffle([].concat(...CONTENT_UNITS.filter(u=>u<node.u).map(unitKeys))).slice(0,12);
     pool.forEach((k,i)=>ex.push(mk(["gap","build","type","listen"][i%4],k)));
@@ -2144,7 +2154,7 @@ function finish(){
   if(n.t==="hw"){ P.hw=P.hw||{}; P.hw[n.u]=true; }
   if(n.t==="hwcheck"){ P.hwc=P.hwc||{}; P.hwc[n.k]=true; }
   save();
-  END={th:n.th,xp,perfect,acc:L.graded?Math.round(L.right/L.graded*100):100,streakUp,goalHit:!goalBefore&&dayXp()>=P.goal,heartBonus,kind:n.t,u:n.u};
+  END={keys:[...new Set(L.q.map(e=>e.k).filter(Boolean))],th:n.th,xp,perfect,acc:L.graded?Math.round(L.right/L.graded*100):100,streakUp,goalHit:!goalBefore&&dayXp()>=P.goal,heartBonus,kind:n.t,u:n.u};
   if(n.t==="hw"){ END.customTitle="Grammatica dell'unità "+n.u+" completata!"; END.hero=HW[n.u-1].ic; }
   if(n.t==="hwcheck"){ END.customTitle="Verifica "+n.k+" completata!"; END.hero="🏁"; }
   screen="end"; render(); beep("win");
@@ -2212,7 +2222,39 @@ function render(){
   hideTip();
   const a=$("#app");
   ({hwunit:renderHwUnit,theme:renderThemePage,vocab:renderVocab,dialog:renderDialog,chat:renderChat,cine:renderCinema,backup:renderBackup,shop:renderShop,home:renderHome,lesson:renderLesson,end:renderEnd,chest:renderChest,guide:renderGuide,noheart:renderNoHeart,fail:renderFail,jumpfail:renderJumpFail})[screen](a);
-  addSpeedChip();
+  addSpeedChip(); addMics();
+}
+/* 🎤 «Dilla tu»: accanto a ogni 🔊 c'è un microfono per ripetere la frase e farla controllare */
+function addMics(){
+  const root=$("#app"); if(!root||(screen==="lesson"&&L&&L.state==="ans")) return;
+  const mk2=(el,text)=>{ if(!text||el.dataset.hasmic) return; el.dataset.hasmic=1; const b=document.createElement("button"); b.className="msay"+(SRClass&&!inClaude()?"":" off"); b.type="button"; b.textContent="🎤"; b.title="Dilla tu"; b.setAttribute("aria-label","Dilla tu"); b.dataset.mtext=text; el.insertAdjacentElement("afterend",b); };
+  root.querySelectorAll("button[data-say]").forEach(b=>mk2(b,b.dataset.say));
+  root.querySelectorAll("[data-row-play]").forEach(b=>{ const r=b.closest(".srow"), t=r&&r.querySelector(":scope > div > div"); mk2(b,t&&t.textContent.trim()); });
+  root.querySelectorAll(".trl .trab").forEach(b=>{ const s=b.parentElement.querySelector("span"); mk2(b,s&&s.textContent.trim()); });
+}
+let PRON=null;
+document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest(".msay"); if(!b) return; ev.preventDefault(); ev.stopPropagation(); pronTry(b.dataset.mtext,b); },true);
+function pronBox(html,cls,ms){ let bx=document.getElementById("pronbox"); if(!bx){ bx=document.createElement("div"); bx.id="pronbox"; document.body.appendChild(bx); }
+  bx.className="show "+(cls||""); bx.innerHTML=html; clearTimeout(pronBox.t); if(ms) pronBox.t=setTimeout(()=>bx.className="",ms);
+  const r=bx.querySelector("[data-psay]"); if(r) r.onclick=()=>speak(r.dataset.psay); const x=bx.querySelector(".px"); if(x) x.onclick=()=>bx.className=""; }
+function pronTry(text,btn){
+  if(!SRClass){ toast("🎤 Questo browser non riconosce la voce: usa Safari sull'iPad o Chrome/Edge sul computer"); return; }
+  if(inClaude()){ toast("🎤 Dentro Claude il microfono è bloccato: apri Grammar Quest dal tuo sito GitHub"); return; }
+  if(PRON){ try{ PRON.stop(); }catch(e){} return; }
+  try{ speechSynthesis.cancel(); }catch(e){} try{ if(typeof AUD!=="undefined"&&AUD.el&&!AUD.el.paused) AUD.el.pause(); }catch(e){}
+  let r; try{ r=new SRClass(); }catch(e){ toast("🎤 Il riconoscimento vocale non parte"); return; }
+  PRON=r; r.lang="en-GB"; r.maxAlternatives=4; r.interimResults=false; btn&&btn.classList.add("on");
+  pronBox(`<b>🎙️ Ti ascolto…</b><span>${esc(text)}</span>`,"",0); let got=false;
+  r.onresult=ev=>{ got=true; const res=ev.results[0], alts=[]; for(let i=0;i<res.length;i++) alts.push(res[i].transcript);
+    const best=alts.map(a=>({a,s:scoreSpeech(text,a)})).sort((x,y)=>y.s.score-x.s.score)[0], s=best.s, need=s.words.length>5?0.7:0.8, ok=s.score>=need;
+    const words=s.words.map((w,i)=>`<span class="${s.marks[i]?"wok":"wko"}">${esc(w)}</span>`).join(" ");
+    beep(ok?"ok":"bad");
+    if(ok){ P.pron=P.pron||{n:0,days:{}}; P.pron.n++; const key=today()+"|"+norm(text); if(!P.pron.days[key]){ P.pron.days[key]=1; addXp(1); } save(); }
+    pronBox(`<button class="px" aria-label="Chiudi">✕</button><b>${ok?(s.score>=0.99?"⭐⭐⭐ Perfetto!":"⭐⭐ Molto bene!"):"Quasi! Riprova"}</b><div class="pw">${words}</div><small>Ho sentito: «${esc(best.a)}» · ${Math.round(s.score*100)}%</small><button class="btn ghost" data-psay="${esc(text)}" style="padding:8px">🔊 Riascolta il modello</button>`,ok?"ok":"bad",ok?5000:9000); };
+  r.onerror=ev=>{ const m=ev.error==="not-allowed"||ev.error==="service-not-allowed"?"Consenti il microfono al sito (su iPad attiva anche la Dettatura).":ev.error==="no-speech"?"Non ho sentito niente: riprova.":ev.error==="network"?"Serve internet per il riconoscimento della voce.":"Errore: "+ev.error;
+    pronBox(`<button class="px">✕</button><b>🎤 ${m}</b>`,"bad",6000); got=true; };
+  r.onend=()=>{ PRON=null; btn&&btn.classList.remove("on"); if(!got) pronBox(`<button class="px">✕</button><b>Non ho sentito niente: tocca 🎤 e riprova.</b>`,"bad",4000); };
+  try{ r.start(); }catch(e){ PRON=null; btn&&btn.classList.remove("on"); }
 }
 function renderHome(a){
   if(tab!=="path"){ renderTab(a); return; }
@@ -2343,15 +2385,17 @@ function renderLesson(a){
 }
 function renderEnd(a){
   const E=END;
-  const title=E.customTitle?E.customTitle:E.kind==="theme"?"Tema completato: "+THEMES.find(t=>t.id===E.th).nm:E.kind==="trophy"?"Unità "+E.u+" completata!":E.kind==="jump"?"Test superato!":E.kind==="practice"?"Ripasso completato!":"Lezione completata!";
+  const title=E.customTitle?E.customTitle:E.kind==="theme"?"Tema completato: "+THEMES.find(t=>t.id===E.th).nm:E.kind==="trophy"?"Unità "+E.u+" completata!":E.kind==="jump"?"Test superato!":E.kind==="practice"?"Ripasso completato!":E.kind==="speakdrill"?"Pronuncia completata!":"Lezione completata!";
   a.innerHTML=`<div class="center"><div class="hero">${E.hero?E.hero:E.kind==="theme"?THEMES.find(t=>t.id===E.th).ic:E.kind==="trophy"?"🏆":E.kind==="jump"?"⏩":MASCOT}</div><h1>${title}</h1>
     ${E.kind==="jump"?`<p style="margin:0">Hai sbloccato il percorso fino all'unità ${E.u}.</p>`:""}
     <div class="chips"><div class="chip"><small>XP e stelle</small>+${E.xp} ⭐</div><div class="chip"><small>Precisione</small>🎯 ${E.acc}%</div><div class="chip"><small>Giorni di fila</small>🔥 ${streakNow()}</div></div>
     ${E.perfect?`<div class="chip">✨ Nessun errore: +5 XP bonus</div>`:""}
     ${E.kind==="practice"?`<div class="chip">${E.perfect?"🌟 Tutte giuste di fila: cuori al massimo (10)!":"❤️ +"+E.heartBonus+" cuori"}<small style="margin-top:4px">ora hai ❤️ ${P.hearts}</small></div>`:""}
     ${E.goalHit?`<div class="chip">🎯 Obiettivo di oggi raggiunto!</div>`:""}
+    ${E.keys&&E.keys.length&&E.kind!=="speakdrill"?`<button class="btn blue" id="saygo" style="max-width:420px">🎤 Ora ripeti tu le frasi della lezione</button>`:""}
   </div><div class="dock"><button class="btn" id="go">Continua</button></div>`;
   $("#go").onclick=()=>{screen="home";render();};
+  const sg=$("#saygo"); if(sg) sg.onclick=()=>{ if(!SRClass||inClaude()){ toast(inClaude()?"🎤 Dentro Claude il microfono è bloccato: usa il tuo sito GitHub":"🎤 Questo browser non riconosce la voce"); return; } micBlocked=false; begin({t:"speakdrill",keys:E.keys},-1); };
 }
 function renderChest(a){
   a.innerHTML=`<div class="center"><div class="hero">🎁</div><h1>Scrigno aperto!</h1><div class="chips"><div class="chip"><small>Bonus</small>+15 ⭐</div></div></div>
@@ -2854,10 +2898,11 @@ function buildHw(node){
     const seq=["gap","gap","build","listen","gap","type","build","type"];
     ks.forEach((k,i)=>ex.push(mk(seq[i%seq.length],k)));
     reviewPick(2,null).filter(k=>!ks.includes(k)).forEach((k,i)=>ex.splice(4+i*3,0,mk("build",k)));
-    if(speakAvailable()) ex.splice(5,0,{t:"speak",k:ks[0]});
+    if(speakAvailable()){ ex.splice(5,0,{t:"speak",k:ks[0]}); ex.push({t:"speak",k:ks[1]}); }
   } else {
     const units=HW_CHECKS.find(c=>c.k===node.k).units;
     shuffle([].concat(...units.map(n=>HW[n-1].items.map((_,i)=>"h:"+n+":"+i)))).slice(0,12).forEach((k,i)=>ex.push(mk(["gap","build","type","listen"][i%4],k)));
+    if(speakAvailable()){ ex.splice(4,0,{t:"speak",k:ex[0].k}); ex.push({t:"speak",k:ex[ex.length-2].k}); }
   }
   return ex;
 }
