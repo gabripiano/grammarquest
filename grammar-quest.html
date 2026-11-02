@@ -197,6 +197,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .start::after{content:"";position:absolute;top:100%;left:50%;margin-left:-7px;border:7px solid transparent;border-top-color:var(--line)}
 @keyframes bob{50%{transform:translateY(-5px)}}
 .fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:6;border:none;border-radius:20px;background:var(--heart);color:#fff;font-weight:800;padding:14px 16px;box-shadow:0 6px 0 var(--bad-deep);font-size:16px;display:flex;align-items:center;gap:6px}
+.fab.mic{position:fixed;right:max(16px,env(safe-area-inset-right,0px));z-index:6;bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--sea);box-shadow:0 6px 0 var(--sea-deep)}
 .fab[disabled]{background:var(--lock);box-shadow:0 6px 0 var(--lock-deep);color:var(--muted)}
 
 /* guida e schermate */
@@ -1997,6 +1998,11 @@ function buildLesson(node){
     const seq=["gap","build","listen","gap","type","build","listen","type","gap"];
     ks.forEach((k,i)=>ex.push(mk(seq[i],k)));
     if(speakAvailable()) ex.splice(5,0,{t:"speak",k:ks[0]});
+  } else if(node.t==="speakdrill"){
+    const seen=Object.keys(P.items).filter(k=>IT[k]&&IT[k].en.split(" ").length<=9);
+    let ks=shuffle(seen).slice(0,6);
+    if(ks.length<6) ks=ks.concat(shuffle(unitKeys(CONTENT_UNITS[0])).slice(0,6-ks.length));
+    ks.forEach(k=>ex.push({t:"speak",k}));
   } else if(node.t==="practice"){
     const ks=reviewPick(4,null);
     ks.forEach(k=>ex.push(mk(pick(speakAvailable()?["gap","build","type","listen","speak"]:["gap","build","type","listen"]),k)));
@@ -2020,7 +2026,7 @@ function startTheme(id){
   begin({t:"theme",th:id},-1);
 }
 function begin(node,idx){
-  L={node,idx,q:buildLesson(node),i:0,graded:0,right:0,mistakes:0,combo:0,free:node.t==="practice",jump:node.t==="jump"};
+  L={node,idx,q:buildLesson(node),i:0,graded:0,right:0,mistakes:0,combo:0,free:node.t==="practice"||node.t==="speakdrill",jump:node.t==="jump"};
   if(!L.q.length){ toast("Fai prima qualche lezione: il ripasso usa le frasi già viste"); L=null; return; }
   screen="lesson"; armExit=false; enter(); window.scrollTo(0,0);
 }
@@ -2052,7 +2058,7 @@ function startMic(){
   rec.onend=()=>{
     L.listening=false;
     if(best){ L.tries=(L.tries||0)+1; L.result=best.s; L.heard=best.a;
-      if(best.s.score>=0.8){ L.state="ok"; L.graded++; L.right++; L.combo++; srGood(e.k); beep("ok"); save(); }
+      if(best.s.score>=(best.s.words.length>5?0.7:0.8)){ L.state="ok"; L.graded++; L.right++; L.combo++; srGood(e.k); beep("ok"); save(); }
       else beep("bad");
     } else if(!L.micErr) L.micErr="no-speech";
     render();
@@ -2173,6 +2179,7 @@ function topBar(){
     <p style="margin:0;color:var(--muted);font-size:13px">Per la voce più naturale: su PC usa Microsoft Edge e scegli una voce «Natural» (Sonia, Libby, Ryan); su iPhone/Mac scarica una voce inglese «Avanzata» o «Premium».</p>
     <div class="row">${[["0.6","Molto lenta"],["0.75","Lenta"],["0.9","Normale"],["1","Naturale"]].map(([r,l])=>`<button class="btn ghost" data-rate="${r}" style="${String(P.rate||0.9)===r?"border-color:var(--sea);background:var(--sea-tint)":""}">${l}</button>`).join("")}</div>
     <button class="btn ghost" id="speakBtn">${!SRClass?"🎤 Pronuncia: non supportata da questo browser":inClaude()?"🎤 Pronuncia: disponibile solo nella versione offline":P.speakOn===false?"🎤 Esercizi di pronuncia: spenti":"🎤 Esercizi di pronuncia: attivi"}</button>
+    <button class="btn ghost" id="micTest">🎤 Prova il microfono</button><p id="micOut" style="margin:0;font-size:14px;color:var(--muted)"></p>
     <button class="btn ghost" id="backupBtn">💾 Salvataggio progressi${cloud?" · ☁️ nell'account":""}</button>
     <button class="btn ghost" id="resetBtn" style="color:var(--bad)">${resetArm?"Sicuro? Tocca di nuovo":"↺ Azzera i progressi"}</button>
     <p style="margin:0;color:var(--muted);font-size:14px">Cuori: si ricarica 1 cuore ogni 3 minuti (fino a 5). Un 💪 Ripasso di 4 frasi ti dà +2 cuori; se le fai tutte giuste di fila arrivi a 10 cuori.${P.hearts<MAXH?" Prossimo cuore tra "+nextHeartIn()+".":""}</p>
@@ -2189,6 +2196,15 @@ function bindTop(){
   document.querySelectorAll("[data-rate]").forEach(b=>b.onclick=()=>{ setSpeed(+b.dataset.rate); render(); });
 
   const sp=$("#speakBtn"); if(sp) sp.onclick=()=>{ if(!SRClass||inClaude()){ toast("Apri il file offline in Chrome, Edge o Safari per usare il microfono"); return; } P.speakOn=P.speakOn===false; P.speakOffUntil=0; save(); render(); };
+  const mt=$("#micTest"); if(mt) mt.onclick=()=>{ const o=$("#micOut");
+    if(!SRClass){ o.textContent="❌ Questo browser non ha il riconoscimento vocale. Usa Safari (iPad/iPhone) o Chrome/Edge (PC)."; return; }
+    if(inClaude()){ o.textContent="❌ Sei dentro Claude: qui il microfono è bloccato. Apri il gioco dal tuo sito GitHub."; return; }
+    let r; try{ r=new SRClass(); }catch(x){ o.textContent="❌ Il riconoscimento vocale non parte: "+x.message; return; }
+    r.lang="en-GB"; r.maxAlternatives=3; o.textContent="🎙️ Ti ascolto: di' «Hello, my name is…»"; let got=false;
+    r.onresult=ev=>{ got=true; o.textContent="✅ Funziona! Ho sentito: «"+ev.results[0][0].transcript+"»"; micBlocked=false; };
+    r.onerror=ev=>{ o.textContent="❌ Errore: "+ev.error+(ev.error==="not-allowed"||ev.error==="service-not-allowed"?" — consenti il microfono al sito (su iPad: Impostazioni › Safari › Microfono, e attiva la Dettatura in Impostazioni › Generali › Tastiera).":ev.error==="network"?" — serve la connessione a internet.":ev.error==="no-speech"?" — non ho sentito niente, riprova parlando più forte.":""); };
+    r.onend=()=>{ if(!got&&/Ti ascolto/.test(o.textContent)) o.textContent="Non ho sentito niente: riprova."; };
+    try{ r.start(); }catch(x){ o.textContent="❌ "+x.message; } };
   const bk=$("#backupBtn"); if(bk) bk.onclick=()=>{ menuOpen=false; screen="backup"; render(); window.scrollTo(0,0); };
   const r=$("#resetBtn"); if(r) r.onclick=()=>{ if(resetArm){P=defP();save();menuOpen=false;resetArm=false;toast("Progressi azzerati");} else resetArm=true; render(); };
 }
@@ -2220,6 +2236,7 @@ function renderHome(a){
     }
   });
   h+=`<p style="text-align:center;color:var(--muted);margin:10px 0 70px">Le unità 🔜 arriveranno nei prossimi aggiornamenti.</p>`;
+  h+=`<button class="fab mic" id="fabmic">🎤 Pronuncia</button>`;
   h+=`<button class="fab" id="fab" ${Object.keys(P.items).length<3?"disabled":""}>💪 Ripasso <small style="opacity:.85">+2 ❤️</small></button>`;
   a.innerHTML=h; bindTop();
   a.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>startNode(+b.dataset.n));
@@ -2227,6 +2244,9 @@ function renderHome(a){
   a.querySelectorAll("[data-guide]").forEach(b=>b.onclick=()=>{guideU=+b.dataset.guide;screen="guide";render();window.scrollTo(0,0);});
   a.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{ const u=+b.dataset.jump; if(CONTENT_UNITS.filter(x=>x<u).length===0) return; begin({t:"jump",u},-1); });
   $("#fab").onclick=()=>begin({t:"practice"},-1);
+  $("#fabmic").onclick=()=>{ if(!SRClass){ toast("🎤 Questo browser non riconosce la voce: usa Safari sull'iPad o Chrome/Edge sul computer"); return; }
+    if(inClaude()){ toast("🎤 Dentro Claude il microfono è bloccato: apri Grammar Quest dal tuo sito GitHub"); return; }
+    micBlocked=false; P.speakOn=true; P.speakOffUntil=0; save(); begin({t:"speakdrill"},-1); };
   const now=a.querySelector(".node.now"); if(now) setTimeout(()=>{try{now.scrollIntoView({block:"center",behavior:"smooth"});}catch(e){}},80);
 }
 function renderGuide(a){
